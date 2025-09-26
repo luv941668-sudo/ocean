@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { MessageCircle, Send, Bot, User, Zap, Database, Fish, Dna, Map, BarChart3 } from 'lucide-react';
+import { aiService, type ChatMessage } from '../services/aiService';
 
 const AI = () => {
   const [messages, setMessages] = useState([
@@ -12,6 +13,7 @@ const AI = () => {
   ]);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const quickActions = [
     { icon: Database, label: 'Find Datasets', query: 'Show me available marine datasets' },
@@ -21,17 +23,10 @@ const AI = () => {
     { icon: BarChart3, label: 'Data Insights', query: 'Generate insights from fisheries data' }
   ];
 
-  const sampleResponses = [
-    "Based on the oceanographic data, I can see temperature patterns indicating...",
-    "The species identification shows a 94% match for Atlantic Cod (Gadus morhua)...",
-    "Your eDNA sample contains genetic material from 6 different species...",
-    "The biodiversity index in this region shows seasonal variations...",
-    "Current data suggests optimal fishing conditions in the northern sectors..."
-  ];
-
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
 
+    setError(null);
     const newMessage = {
       id: messages.length + 1,
       type: 'user',
@@ -43,17 +38,47 @@ const AI = () => {
     setInputMessage('');
     setIsTyping(true);
 
-    // Simulate AI response
-    setTimeout(() => {
+    try {
+      // Convert messages to the format expected by the AI service
+      const chatHistory: ChatMessage[] = messages
+        .filter(msg => msg.type !== 'bot' || msg.id !== 1) // Exclude initial greeting
+        .map(msg => ({
+          role: msg.type === 'user' ? 'user' : 'assistant',
+          content: msg.content
+        }));
+      
+      // Add the new user message
+      chatHistory.push({
+        role: 'user',
+        content: inputMessage
+      });
+
+      const response = await aiService.sendMessage(chatHistory);
+      
       const botResponse = {
         id: messages.length + 2,
         type: 'bot',
-        content: sampleResponses[Math.floor(Math.random() * sampleResponses.length)],
+        content: response,
         timestamp: new Date().toLocaleTimeString()
       };
+      
       setMessages(prev => [...prev, botResponse]);
+    } catch (err) {
+      console.error('Error getting AI response:', err);
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred while processing your request.';
+      setError(errorMessage);
+      
+      const errorResponse = {
+        id: messages.length + 2,
+        type: 'bot',
+        content: `I apologize, but I encountered an error: ${errorMessage}. Please try again or contact support if the issue persists.`,
+        timestamp: new Date().toLocaleTimeString()
+      };
+      
+      setMessages(prev => [...prev, errorResponse]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   const handleQuickAction = (query) => {
@@ -159,6 +184,18 @@ const AI = () => {
 
           {/* Chat Input */}
           <div className="border-t border-gray-100 p-4">
+            {error && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-300 rounded-lg">
+                <p className="text-red-700 text-sm">
+                  <strong>Error:</strong> {error}
+                </p>
+                {error.includes('API key') && (
+                  <p className="text-red-600 text-xs mt-1">
+                    Please configure your NVIDIA API key in the environment variables.
+                  </p>
+                )}
+              </div>
+            )}
             <div className="flex items-center space-x-3">
               <div className="flex-1 relative">
                 <textarea
@@ -178,6 +215,9 @@ const AI = () => {
                 <Send className="w-5 h-5" />
               </button>
             </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Powered by NVIDIA Llama-3.1-Nemotron-70B-Instruct
+            </p>
           </div>
         </div>
 
